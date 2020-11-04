@@ -1,6 +1,6 @@
 {
   "name": "homebridge-mqtt-blinds-simulation",
-  "version": "1.0.0",
+  "version": "0.6.0",
   "description": "Homebridge plugin to control blinds via MQTT with simulation mode",
   "license": "MIT",
   "keywords": [
@@ -13,7 +13,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/rsporny/homebridge-gpio-blinds"
+    "url": "https://github.com/ben4523/homebridge-mqtt-blinds-simulation"
   },
   "dependencies": {
     "mqtt": "^4.2.4",

@@ -152,10 +152,14 @@ BlindsAccessory.prototype.setTargetPosition = function(position, callback) {
 BlindsAccessory.prototype.togglePin = function(action, duration) {
   this.sendMqtt(action);
   
-  if (this.durationOffset && (this.targetPosition == 0 || this.targetPosition == 100)) this.duration += this.durationOffset;
-  this.togglePinTimeout = setTimeout(function() {
-    this.sendMqtt('STOP');
-  }.bind(this), parseInt(duration));
+  if (this.durationOffset && (this.targetPosition == 0 || this.targetPosition == 100))
+    this.duration += this.durationOffset;
+
+  if (this.targetPosition !== 0 && this.targetPosition !== 100) {
+    this.togglePinTimeout = setTimeout(function() {
+        this.sendMqtt('STOP');
+    }.bind(this), parseInt(duration));
+  }
 }
 
 BlindsAccessory.prototype.setFinalBlindsState = function() {
@@ -186,7 +190,7 @@ BlindsAccessory.prototype.sendMqtt = function(action) {
             this.clientMqtt.publish(this.topicStop.url, this.topicStop.message);
             break;
         case 'DOWN':
-            this.clientMqtt.publish(this.topicStop.url, this.topicStop.message);
+            this.clientMqtt.publish(this.topicDown.url, this.topicDown.message);
             break;
         default:
             this.clientMqtt.publish(this.topicStop.url, this.topicStop.message);

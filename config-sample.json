@@ -11,15 +11,15 @@
       "accessory": "Blinds",
       "name": "Kitchen",
       "topicUp": {
-          "topic": "",
+          "url": "",
           "message": ""
       },
       "topicDown": {
-        "topic": "",
+        "url": "",
         "message": ""
       },
       "topicStop": {
-        "topic": "",
+        "url": "",
         "message": ""
       },
       "durationUp": 27000,
