@@ -1,5 +1,5 @@
 var _ = require('underscore');
-var rpio = require('rpio');
+var mqtt = require('mqtt');
 var Service, Characteristic, HomebridgeAPI;
 
 const STATE_DECREASING = 0;
@@ -10,7 +10,7 @@ module.exports = function(homebridge) {
   Service = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
   HomebridgeAPI = homebridge;
-  homebridge.registerAccessory('homebridge-gpio-blinds', 'Blinds', BlindsAccessory);
+  homebridge.registerAccessory('homebridge-mqtt-blinds-simulation', 'Blinds', BlindsAccessory);
 }
 
 function BlindsAccessory(log, config) {
@@ -18,16 +18,15 @@ function BlindsAccessory(log, config) {
 
   this.log = log;
   this.name = config['name'];
-  this.pinUp = config['pinUp'];
-  this.pinDown = config['pinDown'];
+  this.topicUp = config['topicUp'];
+  this.topicDown = config['topicDown'];
+  this.topicStop = config['topicStop'];
   this.durationUp = config['durationUp'];
   this.durationDown = config['durationDown'];
   this.durationOffset = config['durationOffset'];
-  this.pinClosed = config['pinClosed'];
-  this.pinOpen = config['pinOpen'];
-  this.initialState = config['activeLow'] ? rpio.HIGH : rpio.LOW;
-  this.activeState = config['activeLow'] ? rpio.LOW : rpio.HIGH;
-  this.reedSwitchActiveState = config['reedSwitchActiveLow'] ? rpio.LOW : rpio.HIGH;
+  this.mqttUrl = config['mqttUrl'] || 'mqtt://localhost:1883';
+  this.mqttUser = config['user'] || '';
+  this.mqttPass = config['pass'] || '';
 
   this.cacheDirectory = HomebridgeAPI.user.persistPath();
   this.storage = require('node-persist');
@@ -47,9 +46,9 @@ function BlindsAccessory(log, config) {
 
   this.infoService = new Service.AccessoryInformation();
   this.infoService
-    .setCharacteristic(Characteristic.Manufacturer, 'Radoslaw Sporny')
-    .setCharacteristic(Characteristic.Model, 'RaspberryPi GPIO Blinds')
-    .setCharacteristic(Characteristic.SerialNumber, 'Version 1.1.2');
+    .setCharacteristic(Characteristic.Manufacturer, 'Ben4523')
+    .setCharacteristic(Characteristic.Model, 'MQTT Blinds')
+    .setCharacteristic(Characteristic.SerialNumber, 'Version 1.0.0');
 
   this.finalBlindsStateTimeout;
   this.togglePinTimeout;
@@ -57,14 +56,26 @@ function BlindsAccessory(log, config) {
   this.intervalDown = this.durationDown / 100;
   this.currentPositionInterval;
 
-  // use gpio pin numbering
-  rpio.init({
-    mapping: 'gpio'
-  });
-  rpio.open(this.pinUp, rpio.OUTPUT, this.initialState);
-  rpio.open(this.pinDown, rpio.OUTPUT, this.initialState);
-  if (this.pinClosed) rpio.open(this.pinClosed, rpio.INPUT, rpio.PULL_UP);
-  if (this.pinOpen) rpio.open(this.pinOpen, rpio.INPUT, rpio.PULL_UP);
+    const options = {
+        keepalive: 60,
+        clientId: 'mqttjs_' + Math.random().toString(16).substr(2, 8),
+        protocolId: 'MQTT',
+        protocolVersion: 4,
+        clean: true,
+        reconnectPeriod: 1000,
+        connectTimeout: 30 * 1000,
+        will: {
+        topic: 'WillMsg',
+        payload: 'Connection Closed abnormally..!',
+        qos: 0,
+        retain: false
+        },
+        rejectUnauthorized: false,
+        username: this.mqttUser,
+        password: this.mqttPass,
+    }
+
+    this.clientMqtt = mqtt.connect(this.mqttUrl, options);
 
   this.service
     .getCharacteristic(Characteristic.CurrentPosition)
@@ -91,26 +102,7 @@ BlindsAccessory.prototype.getCurrentPosition = function(callback) {
 }
 
 BlindsAccessory.prototype.getTargetPosition = function(callback) {
-  var updatedPosition;
-  if (this.openCloseSensorMalfunction()) {
-    this.log("Open and close reed switches are active, setting to 50");
-    updatedPosition = 50;
-  } else if (this.closedAndOutOfSync()) {
-    this.log("Current position is out of sync, setting to 0");
-    updatedPosition = 0;
-  } else if (this.openAndOutOfSync()) {
-    this.log("Current position is out of sync, setting to 100");
-    updatedPosition = 100;
-  } else if (this.partiallyOpenAndOutOfSync()) {
-    this.log("Current position is out of sync, setting to 50");
-    updatedPosition = 50;
-  }
-  if (updatedPosition !== undefined) {
-    this.currentPosition = updatedPosition;
-    this.targetPosition = updatedPosition;
-    this.storage.setItemSync(this.name, updatedPosition);
-  }
-  this.log("Target position: %s", this.targetPosition);
+    this.log("Target position: %s", this.targetPosition);
   callback(null, this.targetPosition);
 }
 
@@ -124,7 +116,7 @@ BlindsAccessory.prototype.setTargetPosition = function(position, callback) {
     this.log("Blind is moving, current position %s", this.currentPosition);
     if (this.oppositeDirection(moveUp)) {
       this.log('Stopping the blind because of opposite direction');
-      rpio.write((moveUp ? this.pinDown : this.pinUp), this.initialState);
+      this.sendMqtt('STOP');
     }
     clearInterval(this.currentPositionInterval);
     clearTimeout(this.finalBlindsStateTimeout);
@@ -151,17 +143,18 @@ BlindsAccessory.prototype.setTargetPosition = function(position, callback) {
   this.positionState = (moveUp ? STATE_INCREASING : STATE_DECREASING);
 
   this.finalBlindsStateTimeout = setTimeout(this.setFinalBlindsState.bind(this), duration);
-  this.togglePin((moveUp ? this.pinUp : this.pinDown), duration);
+  this.togglePin((moveUp ? 'UP' : 'DOWN'), duration);
 
   callback();
   return true;
 }
 
-BlindsAccessory.prototype.togglePin = function(pin, duration) {
-  if (rpio.read(pin) != this.activeState) rpio.write(pin, this.activeState);
+BlindsAccessory.prototype.togglePin = function(action, duration) {
+  this.sendMqtt(action);
+  
   if (this.durationOffset && (this.targetPosition == 0 || this.targetPosition == 100)) this.duration += this.durationOffset;
   this.togglePinTimeout = setTimeout(function() {
-    rpio.write(pin, this.initialState);
+    this.sendMqtt('STOP');
   }.bind(this), parseInt(duration));
 }
 
@@ -184,23 +177,21 @@ BlindsAccessory.prototype.setCurrentPosition = function(moveUp) {
   this.storage.setItemSync(this.name, this.currentPosition);
 }
 
-BlindsAccessory.prototype.closedAndOutOfSync = function() {
-  return this.currentPosition != 0 && this.pinClosed && (rpio.read(this.pinClosed) == this.reedSwitchActiveState);
-}
-
-BlindsAccessory.prototype.openAndOutOfSync = function() {
-  return this.currentPosition != 100 && this.pinOpen && (rpio.read(this.pinOpen) == this.reedSwitchActiveState);
-}
-
-BlindsAccessory.prototype.partiallyOpenAndOutOfSync = function() {
-  return (this.currentPosition == 0 && this.pinClosed && (rpio.read(this.pinClosed) != this.reedSwitchActiveState)) ||
-         (this.currentPosition == 100 && this.pinOpen && (rpio.read(this.pinOpen) != this.reedSwitchActiveState));
-}
-
-BlindsAccessory.prototype.openCloseSensorMalfunction = function() {
-  return (this.pinClosed && this.pinOpen &&
-         (rpio.read(this.pinClosed) == this.reedSwitchActiveState) &&
-         (rpio.read(this.pinOpen) == this.reedSwitchActiveState));
+BlindsAccessory.prototype.sendMqtt = function(action) {
+    switch (action) {
+        case 'UP':
+            this.clientMqtt.publish(this.topicUp.url, this.topicUp.message);
+            break;
+        case 'STOP':
+            this.clientMqtt.publish(this.topicStop.url, this.topicStop.message);
+            break;
+        case 'DOWN':
+            this.clientMqtt.publish(this.topicStop.url, this.topicStop.message);
+            break;
+        default:
+            this.clientMqtt.publish(this.topicStop.url, this.topicStop.message);
+            break;
+    }
 }
 
 BlindsAccessory.prototype.oppositeDirection = function(moveUp) {

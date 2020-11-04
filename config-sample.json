@@ -5,28 +5,29 @@
     "port": 51826,
     "pin": "031-45-154"
   },
-  "description": "This is an example configuration for the Homebridge GPIO Blinds plugin",
+  "description": "This is an example configuration for the Homebridge MQTT Blinds plugin",
   "accessories": [
     {
       "accessory": "Blinds",
-      "name": "Garage",
-      "pinUp": 5,
-      "pinDown": 11,
-      "durationUp": 13000,
-      "durationDown": 13000
-    },
-    {
-      "accessory": "Blinds",
-      "name": "Bedroom",
-      "pinUp": 4,
-      "pinDown": 3,
+      "name": "Kitchen",
+      "topicUp": {
+          "topic": "",
+          "message": ""
+      },
+      "topicDown": {
+        "topic": "",
+        "message": ""
+      },
+      "topicStop": {
+        "topic": "",
+        "message": ""
+      },
       "durationUp": 27000,
       "durationDown": 25000,
       "durationOffset": 1000,
-      "pinClosed": 17,
-      "pinOpen": 18,
-      "activeLow": false,
-      "reedSwitchActiveLow": false
+      "mqttUrl": "mqtt://localhost:1883",
+      "mqttUser": "",
+      "mqttPass": ""
     }
   ]
 }
