@@ -25,8 +25,8 @@ function BlindsAccessory(log, config) {
   this.durationDown = config['durationDown'];
   this.durationOffset = config['durationOffset'];
   this.mqttUrl = config['mqttUrl'] || 'mqtt://localhost:1883';
-  this.mqttUser = config['user'] || '';
-  this.mqttPass = config['pass'] || '';
+  this.mqttUser = config['mqttUser'] || '';
+  this.mqttPass = config['mqttPass'] || '';
 
   this.cacheDirectory = HomebridgeAPI.user.persistPath();
   this.storage = require('node-persist');
